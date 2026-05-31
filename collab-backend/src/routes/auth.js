@@ -44,7 +44,7 @@ const router = express.Router()
 // transporter = "이메일 배달부" 객체
 // ────────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-  service: 'gmail',                        // Gmail 서비스 사용
+  host: 'smtp.gmail.com',                        // Gmail 서비스 사용
 
   // Render 환경에서 Gmail SMTP 기본 포트(465) 연결이 timeout 나는 경우가 있어
   // TLS 방식의 587 포트를 명시적으로 사용한다.

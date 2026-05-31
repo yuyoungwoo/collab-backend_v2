@@ -24,7 +24,15 @@ const pool = new Pool({
   database: process.env.DB_NAME,     // 접속할 DB 이름 (우리는 collab_code)
   user:     process.env.DB_USER,     // DB 접속 계정 (보통 postgres)
   password: process.env.DB_PASSWORD, // DB 비밀번호 (.env에서 가져옴)
-})
+
+  // Neon 같은 외부 PostgreSQL 서비스는 보안 연결(SSL)을 요구함.
+  // 로컬 DB는 SSL 없이도 연결되지만, 배포 환경(Render → Neon)에서는
+  // SSL 옵션이 없으면 "connection is insecure" 오류가 발생할 수 있음.
+  // rejectUnauthorized: false는 Neon의 인증서 검증 문제로 연결이 막히지 않도록 설정하는 옵션임.
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
 // initDB = initialize Database = 데이터베이스 초기화 함수
 // async = 이 함수 안에 비동기 작업(await)이 있다는 표시

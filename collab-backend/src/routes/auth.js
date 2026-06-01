@@ -41,19 +41,6 @@ const authMiddleware = require('../middleware/auth')
 const router = express.Router()
 
 // ────────────────────────────────────────────────────────────────
-// Resend API를 사용해 이메일 인증번호 발송
-// from은 도메인 인증 전까지 Resend 기본 테스트 발신 주소를 사용한다.
-await resend.emails.send({
-  from: 'CodeCollab <onboarding@resend.dev>',
-  to: email,
-  subject: '[CodeCollab] 이메일 인증번호',
-  html: `
-    <p>CodeCollab 이메일 인증번호입니다.</p>
-    <h2>${code}</h2>
-    <p>인증 화면에 위 번호를 입력해주세요.</p>
-  `,
-})
-
 // 6자리 인증 코드 생성 함수
 // Math.random() = 0이상 1미만의 랜덤 소수 생성
 // * 900000 후 + 100000 → 100000 ~ 999999 범위의 정수
@@ -112,22 +99,21 @@ router.post('/send-code', async (req, res) => {
       [email, code, expiresAt]
     )
 
-    // sendMail로 실제 이메일 발송
-    // await = 발송이 완료될 때까지 기다림
-    await transporter.sendMail({
-      from: `"CodeCollab" <${process.env.EMAIL_USER}>`,  // 발신자
-      to: email,                                          // 수신자
-      subject: '[CodeCollab] 이메일 인증 코드',            // 제목
-      // html = HTML 형식의 이메일 본문
-      // Template literal(백틱+달러중괄호)로 코드 변수를 HTML에 삽입
+    // Resend API를 사용해 이메일 인증번호 발송
+    // Render 무료 플랜에서는 SMTP 포트가 막힐 수 있어 Nodemailer SMTP 대신 Resend HTTPS API를 사용한다.
+    // from은 도메인 인증 전까지 Resend 기본 테스트 발신 주소를 사용한다.
+    await resend.emails.send({
+      from: 'CodeCollab <onboarding@resend.dev>',
+      to: email,
+      subject: '[CodeCollab] 이메일 인증 코드',
       html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto">
-               <h2 style="color:#4F46E5">CodeCollab 이메일 인증</h2>
-               <p>아래 인증 코드를 입력해주세요.</p>
-               <div style="background:#F3F4F6;padding:20px;border-radius:8px;text-align:center;margin:20px 0">
-                 <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4F46E5">${code}</span>
-               </div>
-               <p style="color:#6B7280;font-size:13px">이 코드는 10분간 유효합니다.</p>
-             </div>`,
+           <h2 style="color:#4F46E5">CodeCollab 이메일 인증</h2>
+           <p>아래 인증 코드를 입력해주세요.</p>
+           <div style="background:#F3F4F6;padding:20px;border-radius:8px;text-align:center;margin:20px 0">
+             <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4F46E5">${code}</span>
+           </div>
+           <p style="color:#6B7280;font-size:13px">이 코드는 10분간 유효합니다.</p>
+         </div>`,
     })
 
     // 발송 성공 응답

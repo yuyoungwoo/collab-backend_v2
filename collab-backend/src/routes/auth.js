@@ -22,11 +22,49 @@ const bcrypt = require('bcryptjs')
 // 이 토큰을 가지고 있으면 매번 재로그인 없이 API를 사용할 수 있음
 const jwt = require('jsonwebtoken')
 
-const { Resend } = require('resend')
+// Render 무료 플랜에서는 SMTP 포트가 막힐 수 있어
+// SMTP 대신 Brevo Transactional Email API(HTTPS)로 인증 메일을 발송한다.
+async function sendVerificationEmail(email, code) {
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: {
+        name: 'CodeCollab',
+        email: process.env.BREVO_SENDER_EMAIL,
+      },
+      to: [
+        {
+          email,
+        },
+      ],
+      subject: '[CodeCollab] 이메일 인증 코드',
+      htmlContent: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto">
+        <h2 style="color:#4F46E5">CodeCollab 이메일 인증</h2>
+        <p>아래 인증 코드를 입력해주세요.</p>
+        <div style="background:#F3F4F6;padding:20px;border-radius:8px;text-align:center;margin:20px 0">
+          <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4F46E5">${code}</span>
+        </div>
+        <p style="color:#6B7280;font-size:13px">이 코드는 10분간 유효합니다.</p>
+      </div>`,
+    }),
+  })
 
-// Render 무료 플랜에서는 SMTP 포트가 막혀 Gmail SMTP 연결이 실패할 수 있어
-// SMTP 대신 Resend의 HTTPS API로 인증 메일을 발송한다.
-const resend = new Resend(process.env.RESEND_API_KEY)
+  const resultText = await response.text()
+
+  // Brevo API가 실패하면 프론트에 성공 메시지를 보내지 않도록 에러 처리한다.
+  if (!response.ok) {
+    console.error('Brevo email error:', response.status, resultText)
+    throw new Error(`Brevo email send failed: ${response.status}`)
+  }
+
+  // 발송 성공 시 Render 로그에서 확인할 수 있도록 결과를 반환한다.
+  return resultText ? JSON.parse(resultText) : null
+}
 
 // pool: DB 연결 풀 (db/index.js에서 가져옴)
 // ../db 는 한 단계 위 폴더(src)의 db 폴더를 의미
@@ -100,32 +138,11 @@ router.post('/send-code', async (req, res) => {
       [email, code, expiresAt]
     )
 
-    // Resend API를 사용해 이메일 인증번호 발송
-    // Render 무료 플랜에서는 SMTP 포트가 막힐 수 있어 Nodemailer SMTP 대신 Resend HTTPS API를 사용한다.
-    // from은 도메인 인증 전까지 Resend 기본 테스트 발신 주소를 사용한다.
-    const { data, error } = await resend.emails.send({
-      from: 'CodeCollab <onboarding@resend.dev>',
-      to: email,
-      subject: '[CodeCollab] 이메일 인증 코드',
-      html: `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto">
-           <h2 style="color:#4F46E5">CodeCollab 이메일 인증</h2>
-           <p>아래 인증 코드를 입력해주세요.</p>
-           <div style="background:#F3F4F6;padding:20px;border-radius:8px;text-align:center;margin:20px 0">
-             <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4F46E5">${code}</span>
-           </div>
-           <p style="color:#6B7280;font-size:13px">이 코드는 10분간 유효합니다.</p>
-         </div>`,
-    })
+    // Brevo API를 사용해 이메일 인증번호 발송
+    const brevoResult = await sendVerificationEmail(email, code)
 
-    // Resend가 실패 응답을 반환했는지 확인
-    // 실패했는데 그냥 성공 처리하면 프론트에는 "발송 완료"가 뜨지만 실제 메일은 가지 않는다.
-    if (error) {
-      console.error('Resend email error:', error)
-      return res.status(500).json({ error: '이메일 발송 실패. Resend 설정을 확인해주세요.' })
-    }
-
-    // Resend 발송 성공 시 발송 ID를 Render 로그에 남김
-    console.log('Resend email sent:', data?.id)
+    // Brevo 발송 성공 시 결과를 Render 로그에 남긴다.
+    console.log('Brevo email sent:', brevoResult)
 
     // 발송 성공 응답
     res.json({ message: '인증 코드를 발송했습니다' })

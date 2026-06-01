@@ -40,7 +40,8 @@ const authMiddleware = require('../middleware/auth')
 // 이 router 객체에 각 URL 경로를 등록함
 const router = express.Router()
 
-// ────────────────────────────────────────────────────────────────
+// ──────────────────────────────
+// ──────────────────────────────────
 // 6자리 인증 코드 생성 함수
 // Math.random() = 0이상 1미만의 랜덤 소수 생성
 // * 900000 후 + 100000 → 100000 ~ 999999 범위의 정수
@@ -102,7 +103,7 @@ router.post('/send-code', async (req, res) => {
     // Resend API를 사용해 이메일 인증번호 발송
     // Render 무료 플랜에서는 SMTP 포트가 막힐 수 있어 Nodemailer SMTP 대신 Resend HTTPS API를 사용한다.
     // from은 도메인 인증 전까지 Resend 기본 테스트 발신 주소를 사용한다.
-    await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: 'CodeCollab <onboarding@resend.dev>',
       to: email,
       subject: '[CodeCollab] 이메일 인증 코드',
@@ -115,6 +116,16 @@ router.post('/send-code', async (req, res) => {
            <p style="color:#6B7280;font-size:13px">이 코드는 10분간 유효합니다.</p>
          </div>`,
     })
+
+    // Resend가 실패 응답을 반환했는지 확인
+    // 실패했는데 그냥 성공 처리하면 프론트에는 "발송 완료"가 뜨지만 실제 메일은 가지 않는다.
+    if (error) {
+      console.error('Resend email error:', error)
+      return res.status(500).json({ error: '이메일 발송 실패. Resend 설정을 확인해주세요.' })
+    }
+
+    // Resend 발송 성공 시 발송 ID를 Render 로그에 남김
+    console.log('Resend email sent:', data?.id)
 
     // 발송 성공 응답
     res.json({ message: '인증 코드를 발송했습니다' })

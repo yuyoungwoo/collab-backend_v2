@@ -22,9 +22,11 @@ const bcrypt = require('bcryptjs')
 // 이 토큰을 가지고 있으면 매번 재로그인 없이 API를 사용할 수 있음
 const jwt = require('jsonwebtoken')
 
-// nodemailer: 이메일을 보내는 도구
-// 이메일 인증 코드를 실제로 발송할 때 사용
-const nodemailer = require('nodemailer')
+const { Resend } = require('resend')
+
+// Render 무료 플랜에서는 SMTP 포트가 막혀 Gmail SMTP 연결이 실패할 수 있어
+// SMTP 대신 Resend의 HTTPS API로 인증 메일을 발송한다.
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 // pool: DB 연결 풀 (db/index.js에서 가져옴)
 // ../db 는 한 단계 위 폴더(src)의 db 폴더를 의미
@@ -39,24 +41,17 @@ const authMiddleware = require('../middleware/auth')
 const router = express.Router()
 
 // ────────────────────────────────────────────────────────────────
-// 이메일 발송 설정 (Gmail SMTP 방식)
-// SMTP = Simple Mail Transfer Protocol = 이메일 전송 프로토콜
-// transporter = "이메일 배달부" 객체
-// ────────────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',                        // Gmail 서비스 사용
-
-  // Render 환경에서 Gmail SMTP 기본 포트(465) 연결이 timeout 나는 경우가 있어
-  // TLS 방식의 587 포트를 명시적으로 사용한다.
-  port: 587,
-  secure: false,
-
-  auth: {
-    user: process.env.EMAIL_USER,          // .env의 Gmail 주소
-    pass: process.env.EMAIL_PASS,          // .env의 Gmail 앱 비밀번호
-    // 일반 비밀번호가 아닌 "앱 비밀번호" 사용
-    // Gmail → 계정 → 보안 → 앱 비밀번호에서 발급
-  },
+// Resend API를 사용해 이메일 인증번호 발송
+// from은 도메인 인증 전까지 Resend 기본 테스트 발신 주소를 사용한다.
+await resend.emails.send({
+  from: 'CodeCollab <onboarding@resend.dev>',
+  to: email,
+  subject: '[CodeCollab] 이메일 인증번호',
+  html: `
+    <p>CodeCollab 이메일 인증번호입니다.</p>
+    <h2>${code}</h2>
+    <p>인증 화면에 위 번호를 입력해주세요.</p>
+  `,
 })
 
 // 6자리 인증 코드 생성 함수

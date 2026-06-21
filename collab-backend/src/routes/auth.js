@@ -334,6 +334,8 @@ router.delete('/me', authMiddleware, async (req, res) => {
     res.json({ message: '회원 탈퇴가 완료되었습니다' })
 
   } catch (e) {
+    console.error('회원 탈퇴 오류:', e.message)
+    console.error(e)
     res.status(500).json({ error: '서버 오류' })
   }
 })

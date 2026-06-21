@@ -323,23 +323,62 @@ router.post('/login', async (req, res) => {
 // 인증 필요: authMiddleware (로그인한 본인만 탈퇴 가능)
 // ────────────────────────────────────────────────────────────────
 // authMiddleware가 먼저 실행되어 토큰 검증 후 req.user에 유저 정보 저장
-// 그 다음 실제 탈퇴 처리 함수가 실행됨
+// 회원 삭제 전, 해당 사용자의 댓글/스니펫/세션을 먼저 정리함
+// 이유: 관련 데이터가 users를 외래키로 참조하면 회원 삭제가 실패할 수 있음
 router.delete('/me', authMiddleware, async (req, res) => {
+  const client = await pool.connect()
+
   try {
-    // req.user.userId = authMiddleware가 저장한 현재 유저의 ID
-    // 이 ID로 유저를 삭제하면 ON DELETE CASCADE 설정 덕분에
-    // 그 유저의 댓글, 알림 등도 자동으로 삭제됨
-    await pool.query('DELETE FROM users WHERE id = $1', [req.user.userId])
+    await client.query('BEGIN')
+
+    const userId = req.user.userId
+
+    // 기존에는 users 테이블에서 회원만 바로 삭제했기 때문에,
+    // 사용자가 만든 세션이 sessions.author_id로 남아 있으면
+    // PostgreSQL 외래키 제약 조건(sessions_author_id_fkey) 때문에 탈퇴가 실패했음.
+    // 따라서 회원 삭제 전에 해당 사용자가 작성한 데이터들을 먼저 정리함.
+
+    // 1. 사용자가 작성한 댓글 삭제
+    await client.query(
+        'DELETE FROM comments WHERE author_id = $1',
+        [userId]
+    )
+
+    // 2. 사용자가 저장한 스니펫 삭제
+    await client.query(
+        'DELETE FROM snippets WHERE author_id = $1',
+        [userId]
+    )
+
+    // 3. 사용자가 생성한 세션 삭제
+    // session_id 기준 ON DELETE CASCADE 설정으로
+    // 해당 세션의 댓글과 권한 정보는 함께 삭제됨.
+    await client.query(
+        'DELETE FROM sessions WHERE author_id = $1',
+        [userId]
+    )
+
+    // 4. 마지막으로 회원 삭제
+    // notifications, session_permissions의 user_id는 ON DELETE CASCADE로 정리됨.
+    await client.query(
+        'DELETE FROM users WHERE id = $1',
+        [userId]
+    )
+
+    await client.query('COMMIT')
 
     res.json({ message: '회원 탈퇴가 완료되었습니다' })
-
   } catch (e) {
-    /// 회원탈퇴 실패 원인을 Render Logs에서 확인하기 위한 로그.
+    await client.query('ROLLBACK')
+
+    // 회원탈퇴 실패 원인을 Render Logs에서 확인하기 위한 로그.
     // 예: DB 외래키 제약 조건, 토큰/쿼리 오류 등
     console.error('회원 탈퇴 오류:', e.message)
     console.error(e)
 
     res.status(500).json({ error: '서버 오류' })
+  } finally {
+    client.release()
   }
 })
 
